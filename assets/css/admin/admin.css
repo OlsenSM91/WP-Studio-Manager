@@ -1,0 +1,4 @@
+.wsm-grid th, .wsm-grid td{padding:8px;border-bottom:1px solid #ccc;}
+.wsm-grid{width:100%;border-collapse:collapse;}
+.wsm-grid tbody tr:nth-child(odd){background:#fafafa;}
+.wsm-grid td button.toggle-dob{margin-left:5px;}
