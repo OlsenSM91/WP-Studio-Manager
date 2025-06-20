@@ -33,6 +33,8 @@ final class WP_Studio_Manager {
         register_activation_hook( __FILE__, array( $this, 'install' ) );
         add_action( 'admin_menu', array( $this, 'admin_menu' ) );
         add_action( 'admin_init', array( $this, 'maybe_setup_redirect' ) );
+        add_action( 'admin_enqueue_scripts', array( $this, 'admin_assets' ) );
+        add_action( 'wp_ajax_wsm_add_client', array( $this, 'ajax_add_client' ) );
     }
 
     public function install() {
@@ -44,13 +46,16 @@ final class WP_Studio_Manager {
         $sql = "
         CREATE TABLE {$wpdb->prefix}wsm_clients (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            name varchar(191) NOT NULL,
+            first_name varchar(191) NOT NULL,
+            last_name varchar(191) NOT NULL,
             email varchar(191) NOT NULL,
+            dob date NOT NULL,
             PRIMARY KEY  (id)
         ) $charset_collate;
         CREATE TABLE {$wpdb->prefix}wsm_staff (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            name varchar(191) NOT NULL,
+            first_name varchar(191) NOT NULL,
+            last_name varchar(191) NOT NULL,
             email varchar(191) NOT NULL,
             PRIMARY KEY  (id)
         ) $charset_collate;
@@ -74,14 +79,21 @@ final class WP_Studio_Manager {
         ) $charset_collate;
         CREATE TABLE {$wpdb->prefix}wsm_parents (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            name varchar(191) NOT NULL,
+            first_name varchar(191) NOT NULL,
+            last_name varchar(191) NOT NULL,
             email varchar(191) NOT NULL,
             PRIMARY KEY  (id)
         ) $charset_collate;
-        CREATE TABLE {$wpdb->prefix}wsm_client_parents (
+       CREATE TABLE {$wpdb->prefix}wsm_client_parents (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             client_id bigint(20) unsigned NOT NULL,
             parent_id bigint(20) unsigned NOT NULL,
+            PRIMARY KEY  (id)
+        ) $charset_collate;
+        CREATE TABLE {$wpdb->prefix}wsm_class_staff (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            class_id bigint(20) unsigned NOT NULL,
+            staff_id bigint(20) unsigned NOT NULL,
             PRIMARY KEY  (id)
         ) $charset_collate;
         ";
@@ -252,10 +264,12 @@ final class WP_Studio_Manager {
 
         if ( isset( $_POST['new_client'] ) ) {
             $wpdb->insert( $table, array(
-                'name'  => sanitize_text_field( $_POST['client_name'] ),
-                'email' => sanitize_email( $_POST['client_email'] ),
+                'first_name' => sanitize_text_field( $_POST['client_first_name'] ),
+                'last_name'  => sanitize_text_field( $_POST['client_last_name'] ),
+                'email'      => sanitize_email( $_POST['client_email'] ),
+                'dob'        => sanitize_text_field( $_POST['client_dob'] ),
             ) );
-            echo '<div class="updated"><p>' . esc_html__( 'Client added.', 'wsm' ) . '</p></div>';
+            echo '<div class="updated"><p>' . esc_html__( 'Athlete added.', 'wsm' ) . '</p></div>';
         }
 
         if ( isset( $_GET['delete'] ) ) {
@@ -267,12 +281,14 @@ final class WP_Studio_Manager {
         ?>
         <div class="wrap">
             <h1><?php echo esc_html( self::get_labels()['client'] . 's' ); ?></h1>
-            <table class="widefat">
+            <table class="widefat wsm-grid">
                 <thead>
                     <tr>
                         <th><?php esc_html_e( 'ID', 'wsm' ); ?></th>
-                        <th><?php esc_html_e( 'Name', 'wsm' ); ?></th>
+                        <th><?php esc_html_e( 'First Name', 'wsm' ); ?></th>
+                        <th><?php esc_html_e( 'Last Name', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Email', 'wsm' ); ?></th>
+                        <th><?php esc_html_e( 'DOB', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Actions', 'wsm' ); ?></th>
                     </tr>
                 </thead>
@@ -280,8 +296,10 @@ final class WP_Studio_Manager {
                     <?php foreach ( $clients as $client ) : ?>
                     <tr>
                         <td><?php echo esc_html( $client->id ); ?></td>
-                        <td><?php echo esc_html( $client->name ); ?></td>
+                        <td><?php echo esc_html( $client->first_name ); ?></td>
+                        <td><?php echo esc_html( $client->last_name ); ?></td>
                         <td><?php echo esc_html( $client->email ); ?></td>
+                        <td><span class="wsm-dob-mask">*****</span><span class="wsm-dob" style="display:none;"><?php echo esc_html( $client->dob ); ?></span> <button type="button" class="toggle-dob button"><?php esc_html_e( 'Show', 'wsm' ); ?></button></td>
                         <td>
                             <a href="<?php echo esc_url( admin_url( 'admin.php?page=wsm-clients&delete=' . $client->id ) ); ?>" onclick="return confirm('<?php esc_attr_e( 'Are you sure?', 'wsm' ); ?>');">
                                 <?php esc_html_e( 'Delete', 'wsm' ); ?>
@@ -293,9 +311,11 @@ final class WP_Studio_Manager {
             </table>
 
             <h2><?php esc_html_e( 'Add New', 'wsm' ); ?></h2>
-            <form method="post">
-                <input type="text" name="client_name" placeholder="<?php esc_attr_e( 'Name', 'wsm' ); ?>" required />
+            <form method="post" id="wsm-add-client">
+                <input type="text" name="client_first_name" placeholder="<?php esc_attr_e( 'First Name', 'wsm' ); ?>" required />
+                <input type="text" name="client_last_name" placeholder="<?php esc_attr_e( 'Last Name', 'wsm' ); ?>" required />
                 <input type="email" name="client_email" placeholder="<?php esc_attr_e( 'Email', 'wsm' ); ?>" required />
+                <input type="date" name="client_dob" required />
                 <?php submit_button( __( 'Add', 'wsm' ), 'primary', 'new_client', false ); ?>
             </form>
         </div>
@@ -308,10 +328,11 @@ final class WP_Studio_Manager {
 
         if ( isset( $_POST['new_staff'] ) ) {
             $wpdb->insert( $table, array(
-                'name'  => sanitize_text_field( $_POST['staff_name'] ),
-                'email' => sanitize_email( $_POST['staff_email'] ),
+                'first_name' => sanitize_text_field( $_POST['staff_first_name'] ),
+                'last_name'  => sanitize_text_field( $_POST['staff_last_name'] ),
+                'email'      => sanitize_email( $_POST['staff_email'] ),
             ) );
-            echo '<div class="updated"><p>' . esc_html__( 'Staff added.', 'wsm' ) . '</p></div>';
+            echo '<div class="updated"><p>' . esc_html__( 'Coach added.', 'wsm' ) . '</p></div>';
         }
 
         if ( isset( $_GET['delete'] ) ) {
@@ -323,11 +344,12 @@ final class WP_Studio_Manager {
         ?>
         <div class="wrap">
             <h1><?php echo esc_html( self::get_labels()['staff'] . 's' ); ?></h1>
-            <table class="widefat">
+            <table class="widefat wsm-grid">
                 <thead>
                     <tr>
                         <th><?php esc_html_e( 'ID', 'wsm' ); ?></th>
-                        <th><?php esc_html_e( 'Name', 'wsm' ); ?></th>
+                        <th><?php esc_html_e( 'First Name', 'wsm' ); ?></th>
+                        <th><?php esc_html_e( 'Last Name', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Email', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Actions', 'wsm' ); ?></th>
                     </tr>
@@ -336,7 +358,8 @@ final class WP_Studio_Manager {
                     <?php foreach ( $staff as $member ) : ?>
                     <tr>
                         <td><?php echo esc_html( $member->id ); ?></td>
-                        <td><?php echo esc_html( $member->name ); ?></td>
+                        <td><?php echo esc_html( $member->first_name ); ?></td>
+                        <td><?php echo esc_html( $member->last_name ); ?></td>
                         <td><?php echo esc_html( $member->email ); ?></td>
                         <td>
                             <a href="<?php echo esc_url( admin_url( 'admin.php?page=wsm-staff&delete=' . $member->id ) ); ?>" onclick="return confirm('<?php esc_attr_e( 'Are you sure?', 'wsm' ); ?>');">
@@ -350,7 +373,8 @@ final class WP_Studio_Manager {
 
             <h2><?php esc_html_e( 'Add New', 'wsm' ); ?></h2>
             <form method="post">
-                <input type="text" name="staff_name" placeholder="<?php esc_attr_e( 'Name', 'wsm' ); ?>" required />
+                <input type="text" name="staff_first_name" placeholder="<?php esc_attr_e( 'First Name', 'wsm' ); ?>" required />
+                <input type="text" name="staff_last_name" placeholder="<?php esc_attr_e( 'Last Name', 'wsm' ); ?>" required />
                 <input type="email" name="staff_email" placeholder="<?php esc_attr_e( 'Email', 'wsm' ); ?>" required />
                 <?php submit_button( __( 'Add', 'wsm' ), 'primary', 'new_staff', false ); ?>
             </form>
@@ -410,8 +434,10 @@ final class WP_Studio_Manager {
 
     public function classes_page() {
         global $wpdb;
-        $classes_table = $wpdb->prefix . 'wsm_classes';
-        $levels_table  = $wpdb->prefix . 'wsm_levels';
+        $classes_table      = $wpdb->prefix . 'wsm_classes';
+        $levels_table       = $wpdb->prefix . 'wsm_levels';
+        $staff_table        = $wpdb->prefix . 'wsm_staff';
+        $class_staff_table  = $wpdb->prefix . 'wsm_class_staff';
 
         if ( isset( $_POST['new_class'] ) ) {
             $wpdb->insert( $classes_table, array(
@@ -419,26 +445,39 @@ final class WP_Studio_Manager {
                 'level_id'  => absint( $_POST['class_level'] ),
                 'schedule'  => sanitize_text_field( $_POST['class_schedule'] ),
             ) );
+            $class_id = $wpdb->insert_id;
+            if ( ! empty( $_POST['class_staff'] ) && is_array( $_POST['class_staff'] ) ) {
+                foreach ( $_POST['class_staff'] as $sid ) {
+                    $wpdb->insert( $class_staff_table, array(
+                        'class_id' => $class_id,
+                        'staff_id' => absint( $sid ),
+                    ) );
+                }
+            }
             echo '<div class="updated"><p>' . esc_html__( 'Class added.', 'wsm' ) . '</p></div>';
         }
 
         if ( isset( $_GET['delete'] ) ) {
-            $wpdb->delete( $classes_table, array( 'id' => absint( $_GET['delete'] ) ) );
+            $class_id = absint( $_GET['delete'] );
+            $wpdb->delete( $classes_table, array( 'id' => $class_id ) );
+            $wpdb->delete( $class_staff_table, array( 'class_id' => $class_id ) );
             echo '<div class="updated"><p>' . esc_html__( 'Class deleted.', 'wsm' ) . '</p></div>';
         }
 
-        $classes = $wpdb->get_results( "SELECT c.*, l.name AS level_name FROM {$classes_table} c LEFT JOIN {$levels_table} l ON c.level_id = l.id" );
+        $classes = $wpdb->get_results( "SELECT c.*, l.name AS level_name, GROUP_CONCAT(CONCAT(s.first_name,' ',s.last_name) SEPARATOR ', ') AS staff_names FROM {$classes_table} c LEFT JOIN {$levels_table} l ON c.level_id = l.id LEFT JOIN {$class_staff_table} cs ON c.id = cs.class_id LEFT JOIN {$staff_table} s ON cs.staff_id = s.id GROUP BY c.id" );
         $levels  = $wpdb->get_results( "SELECT * FROM {$levels_table}" );
+        $staff   = $wpdb->get_results( "SELECT * FROM {$staff_table}" );
         ?>
         <div class="wrap">
             <h1><?php echo esc_html( self::get_labels()['class'] . 'es' ); ?></h1>
-            <table class="widefat">
+            <table class="widefat wsm-grid">
                 <thead>
                     <tr>
                         <th><?php esc_html_e( 'ID', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Title', 'wsm' ); ?></th>
                         <th><?php echo esc_html( self::get_labels()['level'] ); ?></th>
                         <th><?php esc_html_e( 'Schedule', 'wsm' ); ?></th>
+                        <th><?php esc_html_e( 'Coaches', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Actions', 'wsm' ); ?></th>
                     </tr>
                 </thead>
@@ -449,6 +488,7 @@ final class WP_Studio_Manager {
                         <td><?php echo esc_html( $class->title ); ?></td>
                         <td><?php echo esc_html( $class->level_name ); ?></td>
                         <td><?php echo esc_html( $class->schedule ); ?></td>
+                        <td><?php echo esc_html( $class->staff_names ); ?></td>
                         <td>
                             <a href="<?php echo esc_url( admin_url( 'admin.php?page=wsm-classes&delete=' . $class->id ) ); ?>" onclick="return confirm('<?php esc_attr_e( 'Are you sure?', 'wsm' ); ?>');">
                                 <?php esc_html_e( 'Delete', 'wsm' ); ?>
@@ -467,6 +507,15 @@ final class WP_Studio_Manager {
                         <option value="<?php echo esc_attr( $level->id ); ?>"><?php echo esc_html( $level->name ); ?></option>
                     <?php endforeach; ?>
                 </select>
+                <fieldset>
+                    <legend><?php esc_html_e( 'Coaches', 'wsm' ); ?></legend>
+                    <?php foreach ( $staff as $coach ) : ?>
+                        <label>
+                            <input type="checkbox" name="class_staff[]" value="<?php echo esc_attr( $coach->id ); ?>" />
+                            <?php echo esc_html( $coach->first_name . ' ' . $coach->last_name ); ?>
+                        </label><br />
+                    <?php endforeach; ?>
+                </fieldset>
                 <input type="datetime-local" name="class_schedule" required />
                 <?php submit_button( __( 'Add', 'wsm' ), 'primary', 'new_class', false ); ?>
             </form>
@@ -482,8 +531,9 @@ final class WP_Studio_Manager {
 
         if ( isset( $_POST['new_parent'] ) ) {
             $wpdb->insert( $parents_table, array(
-                'name'  => sanitize_text_field( $_POST['parent_name'] ),
-                'email' => sanitize_email( $_POST['parent_email'] ),
+                'first_name' => sanitize_text_field( $_POST['parent_first_name'] ),
+                'last_name'  => sanitize_text_field( $_POST['parent_last_name'] ),
+                'email'      => sanitize_email( $_POST['parent_email'] ),
             ) );
             $parent_id = $wpdb->insert_id;
 
@@ -511,11 +561,12 @@ final class WP_Studio_Manager {
         ?>
         <div class="wrap">
             <h1><?php esc_html_e( 'Parents', 'wsm' ); ?></h1>
-            <table class="widefat">
+            <table class="widefat wsm-grid">
                 <thead>
                     <tr>
                         <th><?php esc_html_e( 'ID', 'wsm' ); ?></th>
-                        <th><?php esc_html_e( 'Name', 'wsm' ); ?></th>
+                        <th><?php esc_html_e( 'First Name', 'wsm' ); ?></th>
+                        <th><?php esc_html_e( 'Last Name', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Email', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Athletes', 'wsm' ); ?></th>
                         <th><?php esc_html_e( 'Actions', 'wsm' ); ?></th>
@@ -525,7 +576,8 @@ final class WP_Studio_Manager {
                     <?php foreach ( $parents as $parent ) : ?>
                     <tr>
                         <td><?php echo esc_html( $parent->id ); ?></td>
-                        <td><?php echo esc_html( $parent->name ); ?></td>
+                        <td><?php echo esc_html( $parent->first_name ); ?></td>
+                        <td><?php echo esc_html( $parent->last_name ); ?></td>
                         <td><?php echo esc_html( $parent->email ); ?></td>
                         <td>
                             <?php
@@ -533,7 +585,7 @@ final class WP_Studio_Manager {
                             $names = array();
                             if ( $client_ids ) {
                                 $placeholders = implode( ',', array_fill( 0, count( $client_ids ), '%d' ) );
-                                $sql = "SELECT name FROM {$clients_table} WHERE id IN ($placeholders)";
+                                $sql = "SELECT CONCAT(first_name, ' ', last_name) FROM {$clients_table} WHERE id IN ($placeholders)";
                                 $prepared = $wpdb->prepare( $sql, $client_ids );
                                 $names = $wpdb->get_col( $prepared );
                             }
@@ -552,14 +604,15 @@ final class WP_Studio_Manager {
 
             <h2><?php esc_html_e( 'Add New', 'wsm' ); ?></h2>
             <form method="post">
-                <input type="text" name="parent_name" placeholder="<?php esc_attr_e( 'Name', 'wsm' ); ?>" required />
+                <input type="text" name="parent_first_name" placeholder="<?php esc_attr_e( 'First Name', 'wsm' ); ?>" required />
+                <input type="text" name="parent_last_name" placeholder="<?php esc_attr_e( 'Last Name', 'wsm' ); ?>" required />
                 <input type="email" name="parent_email" placeholder="<?php esc_attr_e( 'Email', 'wsm' ); ?>" required />
                 <fieldset>
                     <legend><?php echo esc_html( self::get_labels()['client'] . 's' ); ?></legend>
                     <?php foreach ( $clients as $client ) : ?>
                         <label>
                             <input type="checkbox" name="client_ids[]" value="<?php echo esc_attr( $client->id ); ?>" />
-                            <?php echo esc_html( $client->name ); ?>
+                            <?php echo esc_html( $client->first_name . ' ' . $client->last_name ); ?>
                         </label><br />
                     <?php endforeach; ?>
                 </fieldset>
@@ -567,6 +620,25 @@ final class WP_Studio_Manager {
             </form>
         </div>
         <?php
+    }
+
+    public function admin_assets( $hook ) {
+        if ( strpos( $hook, 'wsm-' ) !== false ) {
+            wp_enqueue_script( 'wsm-admin', plugin_dir_url( __FILE__ ) . 'assets/js/admin/admin.js', array( 'jquery' ), self::VERSION, true );
+            wp_enqueue_style( 'wsm-admin', plugin_dir_url( __FILE__ ) . 'assets/css/admin/admin.css', array(), self::VERSION );
+        }
+    }
+
+    public function ajax_add_client() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'wsm_clients';
+        $wpdb->insert( $table, array(
+            'first_name' => sanitize_text_field( $_POST['client_first_name'] ),
+            'last_name'  => sanitize_text_field( $_POST['client_last_name'] ),
+            'email'      => sanitize_email( $_POST['client_email'] ),
+            'dob'        => sanitize_text_field( $_POST['client_dob'] ),
+        ) );
+        wp_send_json_success( __( 'Athlete added.', 'wsm' ) );
     }
 
     public static function get_labels() {
