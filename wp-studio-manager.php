@@ -12,6 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+require_once plugin_dir_path( __FILE__ ) . 'includes/industry-configs/index.php';
+
 if ( ! class_exists( 'WP_Studio_Manager' ) ) :
 final class WP_Studio_Manager {
 
@@ -643,27 +645,25 @@ final class WP_Studio_Manager {
 
     public static function get_labels() {
         $industry = get_option( 'wsm_industry', 'sports' );
-        $defaults = array(
-            'sports' => array(
-                'client' => __( 'Athlete', 'wsm' ),
-                'staff'  => __( 'Coach', 'wsm' ),
-                'class'  => __( 'Class', 'wsm' ),
-                'level'  => __( 'Level', 'wsm' ),
-            ),
-            'education' => array(
-                'client' => __( 'Student', 'wsm' ),
-                'staff'  => __( 'Instructor', 'wsm' ),
-                'class'  => __( 'Period', 'wsm' ),
-                'level'  => __( 'Grade', 'wsm' ),
-            ),
-            'fitness' => array(
-                'client' => __( 'Client', 'wsm' ),
-                'staff'  => __( 'Trainer', 'wsm' ),
-                'class'  => __( 'Class', 'wsm' ),
-                'level'  => __( 'Level', 'wsm' ),
-            ),
-        );
-        return isset( $defaults[ $industry ] ) ? $defaults[ $industry ] : $defaults['sports'];
+        switch ( $industry ) {
+            case 'fitness':
+                $config = new WSM_Fitness_Config();
+                break;
+            case 'education':
+                $config = new WSM_Education_Config();
+                break;
+            case 'creative':
+                $config = new WSM_Creative_Config();
+                break;
+            case 'wellness':
+                $config = new WSM_Wellness_Config();
+                break;
+            case 'sports':
+            default:
+                $config = new WSM_Sports_Config();
+                break;
+        }
+        return $config->get_labels();
     }
 }
 endif;
