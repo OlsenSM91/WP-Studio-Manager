@@ -1,1 +1,1 @@
-// Placeholder for readme.txt
+// Placeholder for readme.md
